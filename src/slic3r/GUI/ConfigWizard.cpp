@@ -2637,26 +2637,28 @@ void ConfigWizard::priv::perform_desktop_integration() const
     
     // Copy icon PrusaSlicer-gcodeviewer_192px.png from resources_dir()/icons to homedir/icons/
     std::string icon_path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer_192px.png",resources_dir());
-    std::string dest_path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer%2%.png", homedir, version_suffix);
-    BOOST_LOG_TRIVIAL(debug) << icon_path;
-    BOOST_LOG_TRIVIAL(debug) << dest_path;
+    std::string dest_path = GUI::format("%1%/icons/hicolor/96x96/apps/PrusaSlicer-gcodeviewer%2%.png", homedir, version_suffix);
+    BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
+    BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     std::string error_message;
     auto cfrg = copy_file(icon_path, dest_path, error_message, false);
     if (cfrg)
     {
-        BOOST_LOG_TRIVIAL(error) << "copy icon fail(" << cfrg << "): " << error_message;
-    }
+        BOOST_LOG_TRIVIAL(error) << "desktop integration - copy icon(viewer) fail(" << cfrg << "): " << error_message;
+    }else
+        BOOST_LOG_TRIVIAL(debug) << "desktop integration - copy icon(viewer) success";
 
     // Copy icon PrusaSlicer.png from resources_dir()/icons to homedir/icons/
     icon_path = GUI::format("%1%/icons/PrusaSlicer.png",resources_dir());
-    dest_path = GUI::format("%1%/icons/PrusaSlicer%2%.png", homedir, version_suffix);
-    BOOST_LOG_TRIVIAL(debug) << icon_path;
-    BOOST_LOG_TRIVIAL(debug) << dest_path;
+    dest_path = GUI::format("%1%/icons/hicolor/96x96/apps/PrusaSlicer%2%.png", homedir, version_suffix);
+    BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
+    BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     auto cfr = copy_file(icon_path, dest_path, error_message, false);
     if (cfr)
     {
-        BOOST_LOG_TRIVIAL(error) << "copy icon fail(" << cfr << "): " << error_message;
-    }
+        BOOST_LOG_TRIVIAL(error) << "desktop integration - copy icon(slicer) fail(" << cfr << "): " << error_message;
+    } else
+        BOOST_LOG_TRIVIAL(debug) << "desktop integration - copy icon(slicer) success";
 
     // Write slicer desktop file
     std::string desktop_file = GUI::format(
@@ -2677,6 +2679,8 @@ void ConfigWizard::priv::perform_desktop_integration() const
 
     std::ofstream output(path);
     output << desktop_file;
+
+    BOOST_LOG_TRIVIAL(debug) << "PrusaSlicer.desktop file installation result: " << can_undo_desktop_integration();
 
     // Write gcode viewer desktop file
     desktop_file = GUI::format(
