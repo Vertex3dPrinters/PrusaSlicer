@@ -26,6 +26,7 @@
 #include <wx/wupdlock.h>
 #include <wx/debug.h>
 
+#include "libslic3r/Platform.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/Config.hpp"
 #include "GUI.hpp"
@@ -2632,27 +2633,23 @@ void ConfigWizard::priv::perform_desktop_integration() const
 
     // homedir contains path to ~/.local/share
     wxString homedir;
-    if (! wxGetEnv(wxS("XDG_DATA_HOME"), &homedir) || homedir.empty() )
+    //if (! wxGetEnv(wxS("XDG_DATA_HOME"), &homedir) || homedir.empty() )
+    if (! wxGetEnv(wxS("XDG_DATA_DIRS"), &homedir) || homedir.empty() )
         homedir = wxFileName::GetHomeDir() + wxS("/.local/share");
-    
-    // Copy icon PrusaSlicer-gcodeviewer_192px.png from resources_dir()/icons to homedir/icons/
-    std::string icon_path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer_192px.png",resources_dir());
-    std::string dest_path = GUI::format("%1%/icons/hicolor/96x96/apps/PrusaSlicer-gcodeviewer%2%.png", homedir, version_suffix);
+
+    BOOST_LOG_TRIVIAL(debug) << "homedir: " << homedir; 
+
+    // Chromeos path to icon destination    
+    std::string icon_system_specific;
+    if (platform_flavor() == PlatformFlavor::LinuxOnChromium)
+        icon_system_specific = "hicolor/96x96/apps/";
+
+    // Copy icon PrusaSlicer.png from resources_dir()/icons to homedir/icons/
+    std::string icon_path = GUI::format("%1%/icons/PrusaSlicer.png",resources_dir());
+    std::string dest_path = GUI::format("%1%/icons/hicolor/%2%PrusaSlicer%3%.png", homedir, icon_system_specific, version_suffix);
     BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
     BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     std::string error_message;
-    auto cfrg = copy_file(icon_path, dest_path, error_message, false);
-    if (cfrg)
-    {
-        BOOST_LOG_TRIVIAL(error) << "desktop integration - copy icon(viewer) fail(" << cfrg << "): " << error_message;
-    }else
-        BOOST_LOG_TRIVIAL(debug) << "desktop integration - copy icon(viewer) success";
-
-    // Copy icon PrusaSlicer.png from resources_dir()/icons to homedir/icons/
-    icon_path = GUI::format("%1%/icons/PrusaSlicer.png",resources_dir());
-    dest_path = GUI::format("%1%/icons/hicolor/96x96/apps/PrusaSlicer%2%.png", homedir, version_suffix);
-    BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
-    BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     auto cfr = copy_file(icon_path, dest_path, error_message, false);
     if (cfr)
     {
@@ -2681,6 +2678,20 @@ void ConfigWizard::priv::perform_desktop_integration() const
     output << desktop_file;
 
     BOOST_LOG_TRIVIAL(debug) << "PrusaSlicer.desktop file installation result: " << can_undo_desktop_integration();
+
+    // Repeat for Gcode viewer
+
+    // Copy icon PrusaSlicer-gcodeviewer_192px.png from resources_dir()/icons to homedir/icons/
+    icon_path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer_192px.png",resources_dir());
+    dest_path = GUI::format("%1%/icons/%2%PrusaSlicer-gcodeviewer%3%.png", homedir, icon_system_specific, version_suffix);
+    BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
+    BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
+    auto cfrg = copy_file(icon_path, dest_path, error_message, false);
+    if (cfrg)
+    {
+        BOOST_LOG_TRIVIAL(error) << "desktop integration - copy icon(viewer) fail(" << cfrg << "): " << error_message;
+    }else
+        BOOST_LOG_TRIVIAL(debug) << "desktop integration - copy icon(viewer) success";
 
     // Write gcode viewer desktop file
     desktop_file = GUI::format(
