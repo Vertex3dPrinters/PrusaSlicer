@@ -2536,6 +2536,32 @@ void ConfigWizard::priv::apply_config(AppConfig *app_config, PresetBundle *prese
 }
 
 #ifdef __linux__
+namespace integrate_desktop_internal{
+static void resolve_path_from_var(const std::string& var, std::vector<std::string>& paths)
+{
+    wxString wxdirs;
+    if (! wxGetEnv(boost::nowide::widen(var), &wxdirs) || wxdirs.empty() )
+        return;
+    std::string dirs = boost::nowide::narrow(wxdirs);
+    for (size_t i = dirs.find(':'); i != std::string::npos; i = dirs.find(':'))
+    {
+        paths.push_back(dirs.substr(0, i));
+        if (dirs.size() > i+1)
+            dirs = dirs.substr(i+1);
+    }
+    paths.push_back(dirs);
+}
+static bool contains_path_dir(const std::string& p, const std::string& dir_name)
+{
+    if (p.empty() || dir_name.empty())
+       return false;
+    boost::filesystem::path path(p + (p[p.size()-1] == '/' ? "" : "/") + dir_name);
+    if (boost::filesystem::exists(path) && boost::filesystem::is_directory(path)) {
+        return boost::filesystem::status(path).permissions() & boost::filesystem::owner_write;//true;
+    }
+    return false;
+}
+} // namespace integrate_desktop_internal
 bool ConfigWizard::can_undo_desktop_integration()
 {
     const char *appimage_env = std::getenv("APPIMAGE");
@@ -2600,9 +2626,13 @@ void ConfigWizard::undo_desktop_integration()
     path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer%2%.png", homedir, version_suffix);
     std::remove(path.c_str());
 }
+
+
 void ConfigWizard::priv::perform_desktop_integration() const
 {
     BOOST_LOG_TRIVIAL(debug) << "performing desktop integration";
+
+
 
     // Path to appimage
     const char *appimage_env = std::getenv("APPIMAGE");
@@ -2631,22 +2661,41 @@ void ConfigWizard::priv::perform_desktop_integration() const
         name_suffix = " - beta";
     }
 
-    // homedir contains path to ~/.local/share
-    wxString homedir;
-    //if (! wxGetEnv(wxS("XDG_DATA_HOME"), &homedir) || homedir.empty() )
-    if (! wxGetEnv(wxS("XDG_DATA_DIRS"), &homedir) || homedir.empty() )
-        homedir = wxFileName::GetHomeDir() + wxS("/.local/share");
 
-    BOOST_LOG_TRIVIAL(debug) << "homedir: " << homedir; 
+    // Find directories icons and applications
+    std::vector<std::string>target_candidates;
+    integrate_desktop_internal::resolve_path_from_var("XDG_DATA_HOME", target_candidates);
+    integrate_desktop_internal::resolve_path_from_var("XDG_DATA_DIRS", target_candidates);
+    target_candidates.push_back(GUI::format("%1%/.local/share",wxFileName::GetHomeDir()));
+    std::string target_dir_icons;
+    std::string target_dir_desktop;
+    for (size_t i = 0; i < target_candidates.size(); ++i)
+    {
+        if (target_dir_icons.empty() && integrate_desktop_internal::contains_path_dir(target_candidates[i], "icons"))
+            target_dir_icons = target_candidates[i];
+        if (target_dir_desktop.empty() && integrate_desktop_internal::contains_path_dir(target_candidates[i], "applications"))
+            target_dir_desktop = target_candidates[i];
+        if (!target_dir_icons.empty() && !target_dir_desktop.empty())
+            break;
+    }
+    if(target_dir_icons.empty()) {
+        BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find icons directory";
+        return;
+    }
+    if(target_dir_desktop.empty()) {
+        BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find applications directory";
+        return;
+    }
 
-    // Chromeos path to icon destination    
-    std::string icon_system_specific;
+    // theme path to icon destination    
+    std::string icon_theme_path;
+    /*
     if (platform_flavor() == PlatformFlavor::LinuxOnChromium)
         icon_system_specific = "hicolor/96x96/apps/";
-
+    */
     // Copy icon PrusaSlicer.png from resources_dir()/icons to homedir/icons/
     std::string icon_path = GUI::format("%1%/icons/PrusaSlicer.png",resources_dir());
-    std::string dest_path = GUI::format("%1%/icons/hicolor/%2%PrusaSlicer%3%.png", homedir, icon_system_specific, version_suffix);
+    std::string dest_path = GUI::format("%1%/icons/%2%PrusaSlicer%3%.png", target_dir_icons, icon_theme_path, version_suffix);
     BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
     BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     std::string error_message;
@@ -2672,7 +2721,7 @@ void ConfigWizard::priv::perform_desktop_integration() const
         "StartupNotify=false\n"
         "StartupWMClass=prusa-slicer", name_suffix, version_suffix, appimage_path);
 
-    std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", homedir, version_suffix);
+    std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", target_dir_desktop, version_suffix);
 
     std::ofstream output(path);
     output << desktop_file;
@@ -2683,7 +2732,7 @@ void ConfigWizard::priv::perform_desktop_integration() const
 
     // Copy icon PrusaSlicer-gcodeviewer_192px.png from resources_dir()/icons to homedir/icons/
     icon_path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer_192px.png",resources_dir());
-    dest_path = GUI::format("%1%/icons/%2%PrusaSlicer-gcodeviewer%3%.png", homedir, icon_system_specific, version_suffix);
+    dest_path = GUI::format("%1%/icons/%2%PrusaSlicer-gcodeviewer%3%.png", target_dir_icons, icon_theme_path, version_suffix);
     BOOST_LOG_TRIVIAL(debug) <<"icon from "<< icon_path;
     BOOST_LOG_TRIVIAL(debug) <<"icon to "<< dest_path;
     auto cfrg = copy_file(icon_path, dest_path, error_message, false);
@@ -2707,7 +2756,7 @@ void ConfigWizard::priv::perform_desktop_integration() const
         "Keywords=3D;Printing;Slicer;\n"
         "StartupNotify=false", name_suffix, version_suffix, appimage_path);
 
-    path = GUI::format("%1%/applications/PrusaSlicerGcodeViewer%2%.desktop", homedir, version_suffix);
+    path = GUI::format("%1%/applications/PrusaSlicerGcodeViewer%2%.desktop", target_dir_desktop, version_suffix);
 
     std::ofstream output_viewer(path);
     output_viewer << desktop_file;
