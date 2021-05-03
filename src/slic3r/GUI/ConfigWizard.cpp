@@ -2612,7 +2612,7 @@ static bool create_desktop_file(const std::string& path, const std::string& data
         BOOST_LOG_TRIVIAL(debug) << "Desktop file created.";
         return true;
     }
-    BOOST_LOG_TRIVIAL(debug) << "Desktop file created.";
+    BOOST_LOG_TRIVIAL(debug) << "Desktop file NOT created.";
     return false;
 }
 } // namespace integratec_desktop_internal
@@ -2803,11 +2803,14 @@ void ConfigWizard::priv::perform_desktop_integration() const
                 integrate_desktop_internal::create_path(boost::nowide::narrow(wxFileName::GetHomeDir()), ".local/share/icons");
                 target_dir_icons = GUI::format("%1%/.local/share",wxFileName::GetHomeDir());
                 std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", target_dir_desktop, version_suffix);
-                if (!integrate_desktop_internal::contains_path_dir(target_dir_icons, "applications") 
-                    || !integrate_desktop_internal::create_desktop_file(path, desktop_file)) {
-                        
+                if (integrate_desktop_internal::contains_path_dir(target_dir_icons, "applications")) {
+                    if (!integrate_desktop_internal::create_desktop_file(path, desktop_file)) {    
+                        BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could create desktop file";
+                        return;
+                    }
+                } else {
                     BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find applications directory";
-                    return;
+                        return;
                 }
             }
         }
