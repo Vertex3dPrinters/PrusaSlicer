@@ -2622,24 +2622,15 @@ bool ConfigWizard::can_undo_desktop_integration()
     if (!appimage_env) {
         return false;
     }
-    // follows confirmation that PrusaSlicer.desktop exists
+ 
+    const AppConfig *app_config = wxGetApp().app_config;
+    std::string path(app_config->get("desktop_integration_app_path"));
+    BOOST_LOG_TRIVIAL(debug) << "DESKTOP INTEGRATION APP PATH: " << path;
 
-    // homedir contains path to ~/.local/share
-    wxString homedir;
-    if (! wxGetEnv(wxS("XDG_DATA_HOME"), &homedir) || homedir.empty() )
-        homedir = wxFileName::GetHomeDir() + wxS("/.local/share");
+    if (path.empty())
+        return false;
 
-    std::string version_suffix;
-    std::string version(SLIC3R_VERSION);
-    if (version.find("alpha") != std::string::npos)
-    {
-        version_suffix = "-alpha";
-    }else if (version.find("beta") != std::string::npos)
-    {
-        version_suffix = "-beta";
-    }
-
-    std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", homedir, version_suffix);
+    // confirmation that PrusaSlicer.desktop exists
     struct stat buffer;   
     return (stat (path.c_str(), &buffer) == 0);
 }
@@ -2650,35 +2641,23 @@ void ConfigWizard::undo_desktop_integration()
          BOOST_LOG_TRIVIAL(error) << "Undo desktop integration failed - not Appimage executable.";
         return;
     }
-
-    std::string version_suffix;
-    std::string version(SLIC3R_VERSION);
-    if (version.find("alpha") != std::string::npos)
-    {
-        version_suffix = "-alpha";
-    }else if (version.find("beta") != std::string::npos)
-    {
-        version_suffix = "-beta";
-    }
-
-    // homedir contains path to ~/.local/share
-    wxString homedir;
-    if (! wxGetEnv(wxS("XDG_DATA_HOME"), &homedir) || homedir.empty() )
-        homedir = wxFileName::GetHomeDir() + wxS("/.local/share");
-
-   
+    const AppConfig *app_config = wxGetApp().app_config;
     // slicer .desktop
-    std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", homedir, version_suffix);
-    std::remove(path.c_str());
+    std::string path = std::string(app_config->get("desktop_integration_app_path"));
+    if (!path.empty())
+        std::remove(path.c_str());  
     // slicer icon
-    path = GUI::format("%1%/icons/PrusaSlicer%2%.png", homedir, version_suffix);
-    std::remove(path.c_str());
+    path = std::string(app_config->get("desktop_integration_icon_slicer_path"));
+    if (!path.empty())
+        std::remove(path.c_str());
     // gcode viwer .desktop
-    path = GUI::format("%1%/applications/PrusaSlicerGcodeViewer%2%.desktop", homedir, version_suffix);
-    std::remove(path.c_str());
+    path = std::string(app_config->get("desktop_integration_app_viewer_path"));
+    if (!path.empty())
+        std::remove(path.c_str());
      // gcode viewer icon
-    path = GUI::format("%1%/icons/PrusaSlicer-gcodeviewer%2%.png", homedir, version_suffix);
-    std::remove(path.c_str());
+    path = std::string(app_config->get("desktop_integration_icon_viewer_path"));
+    if (!path.empty())
+        std::remove(path.c_str());
 }
 
 
@@ -2696,7 +2675,7 @@ void ConfigWizard::priv::perform_desktop_integration() const
     integrate_desktop_internal::resolve_path_from_var("XDG_DATA_HOME", target_candidates);
     integrate_desktop_internal::resolve_path_from_var("XDG_DATA_DIRS", target_candidates);
     //target_candidates.push_back(GUI::format("%1%/.local/share",wxFileName::GetHomeDir()));
-
+/*
     for (size_t i = 0; i < target_candidates.size(); ++i)
     {
         integrate_desktop_internal::contains_path_dir(target_candidates[i], "icons");
@@ -2711,6 +2690,7 @@ void ConfigWizard::priv::perform_desktop_integration() const
             integrate_desktop_internal::create_path(target_candidates[i], ".test/share/applications");
         }
     }
+*/
 
     // Path to appimage
     const char *appimage_env = std::getenv("APPIMAGE");
@@ -2783,6 +2763,12 @@ void ConfigWizard::priv::perform_desktop_integration() const
             }
         }
     }
+    if(target_dir_icons.empty()) {
+        BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find icons directory";
+        return;
+    }
+    AppConfig *app_config = wxGetApp().app_config;
+    app_config->set("desktop_integration_icon_slicer_path", GUI::format("%1%/icons/%2%PrusaSlicer%3%.png", target_dir_icons, icon_theme_path, version_suffix));
 
     // desktop file
     for (size_t i = 0; i < target_candidates.size(); ++i)
@@ -2827,17 +2813,13 @@ void ConfigWizard::priv::perform_desktop_integration() const
         }
     }
 
-    if(target_dir_icons.empty()) {
-        BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find icons directory";
-        return;
-    }
+
     if(target_dir_desktop.empty()) {
         BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could not find applications directory";
         return;
     }
-
+    app_config->set("desktop_integration_app_path", GUI::format("%1%/applications/PrusaSlicer%2%.desktop", target_dir_desktop, version_suffix));
     
-
 
     /*
 
