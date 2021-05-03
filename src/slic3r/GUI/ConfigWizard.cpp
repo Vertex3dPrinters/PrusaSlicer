@@ -2801,9 +2801,9 @@ void ConfigWizard::priv::perform_desktop_integration() const
             if (i == target_candidates.size() - 1) {
                 // create $HOME/.local/share
                 integrate_desktop_internal::create_path(boost::nowide::narrow(wxFileName::GetHomeDir()), ".local/share/icons");
-                target_dir_icons = GUI::format("%1%/.local/share",wxFileName::GetHomeDir());
+                target_dir_desktop = GUI::format("%1%/.local/share",wxFileName::GetHomeDir());
                 std::string path = GUI::format("%1%/applications/PrusaSlicer%2%.desktop", target_dir_desktop, version_suffix);
-                if (integrate_desktop_internal::contains_path_dir(target_dir_icons, "applications")) {
+                if (integrate_desktop_internal::contains_path_dir(target_dir_desktop, "applications")) {
                     if (!integrate_desktop_internal::create_desktop_file(path, desktop_file)) {    
                         BOOST_LOG_TRIVIAL(error) << "Performing desktop integration failed - could create desktop file";
                         return;
