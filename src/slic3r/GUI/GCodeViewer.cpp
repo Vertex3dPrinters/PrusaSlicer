@@ -143,6 +143,9 @@ bool GCodeViewer::Path::matches(const GCodeProcessor::MoveVertex& move) const
     case EMoveType::Custom_GCode:
     case EMoveType::Retract:
     case EMoveType::Unretract:
+#if ENABLE_SEAMS_VISUALIZATION
+    case EMoveType::Seam:
+#endif // ENABLE_SEAMS_VISUALIZATION
     case EMoveType::Extrude: {
         // use rounding to reduce the number of generated paths
 #if ENABLE_SPLITTED_VERTEX_BUFFER
@@ -540,6 +543,9 @@ const std::vector<GCodeViewer::Color> GCodeViewer::Extrusion_Role_Colors {{
 const std::vector<GCodeViewer::Color> GCodeViewer::Options_Colors {{
     { 0.803f, 0.135f, 0.839f },   // Retractions
     { 0.287f, 0.679f, 0.810f },   // Unretractions
+#if ENABLE_SEAMS_VISUALIZATION
+    { 0.900f, 0.900f, 0.900f },   // Seams
+#endif // ENABLE_SEAMS_VISUALIZATION
     { 0.758f, 0.744f, 0.389f },   // ToolChanges
     { 0.856f, 0.582f, 0.546f },   // ColorChanges
     { 0.322f, 0.942f, 0.512f },   // PausePrints
@@ -582,11 +588,20 @@ GCodeViewer::GCodeViewer()
         case EMoveType::Pause_Print:
         case EMoveType::Custom_GCode:
         case EMoveType::Retract:
+#if ENABLE_SEAMS_VISUALIZATION
+        case EMoveType::Unretract:
+        case EMoveType::Seam: {
+            buffer.render_primitive_type = TBuffer::ERenderPrimitiveType::Point;
+            buffer.vertices.format = VBuffer::EFormat::Position;
+            break;
+        }
+#else
         case EMoveType::Unretract: {
             buffer.render_primitive_type = TBuffer::ERenderPrimitiveType::Point;
             buffer.vertices.format = VBuffer::EFormat::Position;
             break;
         }
+#endif // ENABLE_SEAMS_VISUALIZATION
         case EMoveType::Wipe:
         case EMoveType::Extrude: {
             buffer.render_primitive_type = TBuffer::ERenderPrimitiveType::Triangle;
@@ -796,10 +811,18 @@ void GCodeViewer::render() const
             case EMoveType::Pause_Print:
             case EMoveType::Custom_GCode:
             case EMoveType::Retract:
+#if ENABLE_SEAMS_VISUALIZATION
+            case EMoveType::Unretract:
+            case EMoveType::Seam: {
+                buffer.shader = wxGetApp().is_glsl_version_greater_or_equal_to(1, 20) ? "options_120" : "options_110";
+                break;
+            }
+#else
             case EMoveType::Unretract: {
                 buffer.shader = wxGetApp().is_glsl_version_greater_or_equal_to(1, 20) ? "options_120" : "options_110";
                 break;
             }
+#endif // ENABLE_SEAMS_VISUALIZATION
             case EMoveType::Wipe:
             case EMoveType::Extrude: {
                 buffer.shader = "gouraud_light";
@@ -938,6 +961,9 @@ unsigned int GCodeViewer::get_options_visibility_flags() const
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::Wipe), is_toolpath_move_type_visible(EMoveType::Wipe));
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::Retractions), is_toolpath_move_type_visible(EMoveType::Retract));
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::Unretractions), is_toolpath_move_type_visible(EMoveType::Unretract));
+#if ENABLE_SEAMS_VISUALIZATION
+    flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::Seams), is_toolpath_move_type_visible(EMoveType::Seam));
+#endif // ENABLE_SEAMS_VISUALIZATION
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::ToolChanges), is_toolpath_move_type_visible(EMoveType::Tool_change));
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::ColorChanges), is_toolpath_move_type_visible(EMoveType::Color_change));
     flags = set_flag(flags, static_cast<unsigned int>(Preview::OptionType::PausePrints), is_toolpath_move_type_visible(EMoveType::Pause_Print));
@@ -958,6 +984,9 @@ void GCodeViewer::set_options_visibility_from_flags(unsigned int flags)
     set_toolpath_move_type_visible(EMoveType::Wipe, is_flag_set(static_cast<unsigned int>(Preview::OptionType::Wipe)));
     set_toolpath_move_type_visible(EMoveType::Retract, is_flag_set(static_cast<unsigned int>(Preview::OptionType::Retractions)));
     set_toolpath_move_type_visible(EMoveType::Unretract, is_flag_set(static_cast<unsigned int>(Preview::OptionType::Unretractions)));
+#if ENABLE_SEAMS_VISUALIZATION
+    set_toolpath_move_type_visible(EMoveType::Seam, is_flag_set(static_cast<unsigned int>(Preview::OptionType::Seams)));
+#endif // ENABLE_SEAMS_VISUALIZATION
     set_toolpath_move_type_visible(EMoveType::Tool_change, is_flag_set(static_cast<unsigned int>(Preview::OptionType::ToolChanges)));
     set_toolpath_move_type_visible(EMoveType::Color_change, is_flag_set(static_cast<unsigned int>(Preview::OptionType::ColorChanges)));
     set_toolpath_move_type_visible(EMoveType::Pause_Print, is_flag_set(static_cast<unsigned int>(Preview::OptionType::PausePrints)));
@@ -1595,13 +1624,15 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
 #if ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
             const std::array<IBufferType, 8> first_seg_v_offsets = convert_vertices_offset(vbuffer_size, { 0, 1, 2, 3, 4, 5, 6, 7 });
             const std::array<IBufferType, 8> non_first_seg_v_offsets = convert_vertices_offset(vbuffer_size, { -4, 0, -2, 1, 2, 3, 4, 5 });
-#endif // ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
-
+            bool is_first_segment = (last_path.vertices_count() == 1);
+            if (is_first_segment || vbuffer_size == 0) {
+#else
             if (last_path.vertices_count() == 1 || vbuffer_size == 0) {
+#endif // ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
                 // 1st segment or restart into a new vertex buffer
                 // ===============================================
 #if ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
-                if (last_path.vertices_count() == 1)
+                if (is_first_segment)
                     // starting cap triangles
                     append_starting_cap_triangles(indices, first_seg_v_offsets);
 #endif // ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
@@ -1679,7 +1710,7 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
 #if ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
             if (next != nullptr && (curr.type != next->type || !last_path.matches(*next)))
                 // ending cap triangles
-                append_ending_cap_triangles(indices, non_first_seg_v_offsets);
+                append_ending_cap_triangles(indices, is_first_segment ? first_seg_v_offsets : non_first_seg_v_offsets);
 #endif // ENABLE_REDUCED_TOOLPATHS_SEGMENT_CAPS
 
             last_path.sub_paths.back().last = { ibuffer_id, indices.size() - 1, move_id, curr.position };
@@ -1714,7 +1745,11 @@ void GCodeViewer::load_toolpaths(const GCodeProcessor::Result& gcode_result)
             // for the gcode viewer we need to take in account all moves to correctly size the printbed
             m_paths_bounding_box.merge(move.position.cast<double>());
         else {
+#if ENABLE_START_GCODE_VISUALIZATION
+            if (move.type == EMoveType::Extrude && move.extrusion_role != erCustom && move.width != 0.0f && move.height != 0.0f)
+#else
             if (move.type == EMoveType::Extrude && move.width != 0.0f && move.height != 0.0f)
+#endif // ENABLE_START_GCODE_VISUALIZATION
                 m_paths_bounding_box.merge(move.position.cast<double>());
         }
     }
@@ -3163,6 +3198,9 @@ void GCodeViewer::refresh_render_paths(bool keep_sequential_current_first, bool 
         case EMoveType::Custom_GCode: { color = Options_Colors[static_cast<unsigned int>(EOptionsColors::CustomGCodes)]; break; }
         case EMoveType::Retract:      { color = Options_Colors[static_cast<unsigned int>(EOptionsColors::Retractions)]; break; }
         case EMoveType::Unretract:    { color = Options_Colors[static_cast<unsigned int>(EOptionsColors::Unretractions)]; break; }
+#if ENABLE_SEAMS_VISUALIZATION
+        case EMoveType::Seam:         { color = Options_Colors[static_cast<unsigned int>(EOptionsColors::Seams)]; break; }
+#endif // ENABLE_SEAMS_VISUALIZATION
         case EMoveType::Extrude: {
             if (!top_layer_only ||
                 m_sequential_view.current.last == global_endpoints.last ||
@@ -4013,14 +4051,25 @@ void GCodeViewer::render_legend() const
     if (!m_legend_enabled)
         return;
 
+#if ENABLE_SCROLLABLE_LEGEND
+    Size cnv_size = wxGetApp().plater()->get_current_canvas3D()->get_canvas_size();
+#endif // ENABLE_SCROLLABLE_LEGEND
+
     ImGuiWrapper& imgui = *wxGetApp().imgui();
 
     imgui.set_next_window_pos(0.0f, 0.0f, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::SetNextWindowBgAlpha(0.6f);
+#if ENABLE_SCROLLABLE_LEGEND
+    float max_height = 0.75f * static_cast<float>(cnv_size.get_height());
+    float child_height = 0.3333f * max_height;
+    ImGui::SetNextWindowSizeConstraints({ 0.0f, 0.0f }, { -1.0f, max_height });
+    imgui.begin(std::string("Legend"), ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+#else
     imgui.begin(std::string("Legend"), ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
+#endif // ENABLE_SCROLLABLE_LEGEND
 
     enum class EItemType : unsigned char
     {
@@ -4031,94 +4080,106 @@ void GCodeViewer::render_legend() const
     };
 
     const PrintEstimatedStatistics::Mode& time_mode = m_print_statistics.modes[static_cast<size_t>(m_time_estimate_mode)];
+#if ENABLE_SCROLLABLE_LEGEND
+    bool show_estimated_time = time_mode.time > 0.0f && (m_view_type == EViewType::FeatureType ||
+        (m_view_type == EViewType::ColorPrint && !time_mode.custom_gcode_times.empty()));
+#endif // ENABLE_SCROLLABLE_LEGEND
 
     float icon_size = ImGui::GetTextLineHeight();
     float percent_bar_size = 2.0f * ImGui::GetTextLineHeight();
 
+#if ENABLE_SCROLLABLE_LEGEND
+    auto append_item = [this, icon_size, percent_bar_size, &imgui](EItemType type, const Color& color, const std::string& label,
+#else
     auto append_item = [this, draw_list, icon_size, percent_bar_size, &imgui](EItemType type, const Color& color, const std::string& label,
+#endif // ENABLE_SCROLLABLE_LEGEND
         bool visible = true, const std::string& time = "", float percent = 0.0f, float max_percent = 0.0f, const std::array<float, 4>& offsets = { 0.0f, 0.0f, 0.0f, 0.0f },
         std::function<void()> callback = nullptr) {
-            if (!visible)
-                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.3333f);
-            ImVec2 pos = ImGui::GetCursorScreenPos();
-            switch (type) {
-            default:
-            case EItemType::Rect: {
-                draw_list->AddRectFilled({ pos.x + 1.0f, pos.y + 1.0f }, { pos.x + icon_size - 1.0f, pos.y + icon_size - 1.0f },
-                    ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }));
-                break;
-            }
-            case EItemType::Circle: {
-                ImVec2 center(0.5f * (pos.x + pos.x + icon_size), 0.5f * (pos.y + pos.y + icon_size));
-                if (m_buffers[buffer_id(EMoveType::Retract)].shader == "options_120") {
-                    draw_list->AddCircleFilled(center, 0.5f * icon_size,
-                        ImGui::GetColorU32({ 0.5f * color[0], 0.5f * color[1], 0.5f * color[2], 1.0f }), 16);
-                    float radius = 0.5f * icon_size;
-                    draw_list->AddCircleFilled(center, radius, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 16);
-                    radius = 0.5f * icon_size * 0.01f * 33.0f;
-                    draw_list->AddCircleFilled(center, radius, ImGui::GetColorU32({ 0.5f * color[0], 0.5f * color[1], 0.5f * color[2], 1.0f }), 16);
-                }
-                else
-                    draw_list->AddCircleFilled(center, 0.5f * icon_size, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 16);
+        if (!visible)
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.3333f);
 
-                break;
-            }
-            case EItemType::Hexagon: {
-                ImVec2 center(0.5f * (pos.x + pos.x + icon_size), 0.5f * (pos.y + pos.y + icon_size));
-                draw_list->AddNgonFilled(center, 0.5f * icon_size, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 6);
-                break;
-            }
-            case EItemType::Line: {
-                draw_list->AddLine({ pos.x + 1, pos.y + icon_size - 1 }, { pos.x + icon_size - 1, pos.y + 1 }, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 3.0f);
-                break;
-            }
-            }
-
-            // draw text
-            ImGui::Dummy({ icon_size, icon_size });
-            ImGui::SameLine();
-            if (callback != nullptr) {
-                if (ImGui::MenuItem(label.c_str()))
-                    callback();
-                else {
-                    // show tooltip
-                    if (ImGui::IsItemHovered()) {
-                        if (!visible)
-                            ImGui::PopStyleVar();
-                        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGuiWrapper::COL_WINDOW_BACKGROUND);
-                        ImGui::BeginTooltip();
-                        imgui.text(visible ? _u8L("Click to hide") : _u8L("Click to show"));
-                        ImGui::EndTooltip();
-                        ImGui::PopStyleColor();
-                        if (!visible)
-                            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.3333f);
-
-                        // to avoid the tooltip to change size when moving the mouse
-                        wxGetApp().plater()->get_current_canvas3D()->set_as_dirty();
-                        wxGetApp().plater()->get_current_canvas3D()->request_extra_frame();
-                    }
-                }
-
-                if (!time.empty()) {
-                    ImGui::SameLine(offsets[0]);
-                    imgui.text(time);
-                    ImGui::SameLine(offsets[1]);
-                    pos = ImGui::GetCursorScreenPos();
-                    float width = std::max(1.0f, percent_bar_size * percent / max_percent);
-                    draw_list->AddRectFilled({ pos.x, pos.y + 2.0f }, { pos.x + width, pos.y + icon_size - 2.0f },
-                        ImGui::GetColorU32(ImGuiWrapper::COL_ORANGE_LIGHT));
-                    ImGui::Dummy({ percent_bar_size, icon_size });
-                    ImGui::SameLine();
-                    char buf[64];
-                    ::sprintf(buf, "%.1f%%", 100.0f * percent);
-                    ImGui::TextUnformatted((percent > 0.0f) ? buf : "");
-                }
+#if ENABLE_SCROLLABLE_LEGEND
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+#endif // ENABLE_SCROLLABLE_LEGEND
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        switch (type) {
+        default:
+        case EItemType::Rect: {
+            draw_list->AddRectFilled({ pos.x + 1.0f, pos.y + 1.0f }, { pos.x + icon_size - 1.0f, pos.y + icon_size - 1.0f },
+                ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }));
+            break;
+        }
+        case EItemType::Circle: {
+            ImVec2 center(0.5f * (pos.x + pos.x + icon_size), 0.5f * (pos.y + pos.y + icon_size));
+            if (m_buffers[buffer_id(EMoveType::Retract)].shader == "options_120") {
+                draw_list->AddCircleFilled(center, 0.5f * icon_size,
+                    ImGui::GetColorU32({ 0.5f * color[0], 0.5f * color[1], 0.5f * color[2], 1.0f }), 16);
+                float radius = 0.5f * icon_size;
+                draw_list->AddCircleFilled(center, radius, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 16);
+                radius = 0.5f * icon_size * 0.01f * 33.0f;
+                draw_list->AddCircleFilled(center, radius, ImGui::GetColorU32({ 0.5f * color[0], 0.5f * color[1], 0.5f * color[2], 1.0f }), 16);
             }
             else
-                imgui.text(label);
+                draw_list->AddCircleFilled(center, 0.5f * icon_size, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 16);
 
-            if (!visible)
-                ImGui::PopStyleVar();
+            break;
+        }
+        case EItemType::Hexagon: {
+            ImVec2 center(0.5f * (pos.x + pos.x + icon_size), 0.5f * (pos.y + pos.y + icon_size));
+            draw_list->AddNgonFilled(center, 0.5f * icon_size, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 6);
+            break;
+        }
+        case EItemType::Line: {
+            draw_list->AddLine({ pos.x + 1, pos.y + icon_size - 1 }, { pos.x + icon_size - 1, pos.y + 1 }, ImGui::GetColorU32({ color[0], color[1], color[2], 1.0f }), 3.0f);
+            break;
+        }
+        }
+
+        // draw text
+        ImGui::Dummy({ icon_size, icon_size });
+        ImGui::SameLine();
+        if (callback != nullptr) {
+            if (ImGui::MenuItem(label.c_str()))
+                callback();
+            else {
+                // show tooltip
+                if (ImGui::IsItemHovered()) {
+                    if (!visible)
+                        ImGui::PopStyleVar();
+                    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGuiWrapper::COL_WINDOW_BACKGROUND);
+                    ImGui::BeginTooltip();
+                    imgui.text(visible ? _u8L("Click to hide") : _u8L("Click to show"));
+                    ImGui::EndTooltip();
+                    ImGui::PopStyleColor();
+                    if (!visible)
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.3333f);
+
+                    // to avoid the tooltip to change size when moving the mouse
+                    wxGetApp().plater()->get_current_canvas3D()->set_as_dirty();
+                    wxGetApp().plater()->get_current_canvas3D()->request_extra_frame();
+                }
+            }
+
+            if (!time.empty()) {
+                ImGui::SameLine(offsets[0]);
+                imgui.text(time);
+                ImGui::SameLine(offsets[1]);
+                pos = ImGui::GetCursorScreenPos();
+                float width = std::max(1.0f, percent_bar_size * percent / max_percent);
+                draw_list->AddRectFilled({ pos.x, pos.y + 2.0f }, { pos.x + width, pos.y + icon_size - 2.0f },
+                    ImGui::GetColorU32(ImGuiWrapper::COL_ORANGE_LIGHT));
+                ImGui::Dummy({ percent_bar_size, icon_size });
+                ImGui::SameLine();
+                char buf[64];
+                ::sprintf(buf, "%.1f%%", 100.0f * percent);
+                ImGui::TextUnformatted((percent > 0.0f) ? buf : "");
+            }
+        }
+        else
+            imgui.text(label);
+
+        if (!visible)
+            ImGui::PopStyleVar();
     };
 
     auto append_range = [append_item](const Extrusions::Range& range, unsigned int decimals) {
@@ -4218,7 +4279,7 @@ void GCodeViewer::render_legend() const
         return _u8L("from") + " " + std::string(buf1) + " " + _u8L("to") + " " + std::string(buf2) + " " + _u8L("mm");
     };
 
-    auto role_time_and_percent = [ time_mode](ExtrusionRole role) {
+    auto role_time_and_percent = [time_mode](ExtrusionRole role) {
         auto it = std::find_if(time_mode.roles_times.begin(), time_mode.roles_times.end(), [role](const std::pair<ExtrusionRole, float>& item) { return role == item.first; });
         return (it != time_mode.roles_times.end()) ? std::make_pair(it->second, it->second / time_mode.time) : std::make_pair(0.0f, 0.0f);
     };
@@ -4305,57 +4366,65 @@ void GCodeViewer::render_legend() const
     }
     case EViewType::ColorPrint:
     {
-        const std::vector<CustomGCode::Item>& custom_gcode_per_print_z = wxGetApp().plater()->model().custom_gcode_per_print_z.gcodes;
-        if (m_extruders_count == 1) { // single extruder use case
-            std::vector<std::pair<Color, std::pair<double, double>>> cp_values = color_print_ranges(0, custom_gcode_per_print_z);
-            const int items_cnt = static_cast<int>(cp_values.size());
-            if (items_cnt == 0) { // There are no color changes, but there are some pause print or custom Gcode
-                append_item(EItemType::Rect, m_tool_colors.front(), _u8L("Default color"));
-            }
-            else {
-                for (int i = items_cnt; i >= 0; --i) {
-                    // create label for color change item
-                    if (i == 0) {
-                        append_item(EItemType::Rect, m_tool_colors[0], upto_label(cp_values.front().second.first));
-                        break;
-                    }
-                    else if (i == items_cnt) {
-                        append_item(EItemType::Rect, cp_values[i - 1].first, above_label(cp_values[i - 1].second.second));
-                        continue;
-                    }
-                    append_item(EItemType::Rect, cp_values[i - 1].first, fromto_label(cp_values[i - 1].second.second, cp_values[i].second.first));
-                }
-            }
-        }
-        else { // multi extruder use case
-            // shows only extruders actually used
-            for (unsigned char i : m_extruder_ids) {
-                std::vector<std::pair<Color, std::pair<double, double>>> cp_values = color_print_ranges(i, custom_gcode_per_print_z);
+#if ENABLE_SCROLLABLE_LEGEND
+        // add scrollable region
+        if (ImGui::BeginChild("color_prints", { -1.0f, child_height }, false)) {
+#endif // ENABLE_SCROLLABLE_LEGEND
+            const std::vector<CustomGCode::Item>& custom_gcode_per_print_z = wxGetApp().plater()->model().custom_gcode_per_print_z.gcodes;
+            if (m_extruders_count == 1) { // single extruder use case
+                std::vector<std::pair<Color, std::pair<double, double>>> cp_values = color_print_ranges(0, custom_gcode_per_print_z);
                 const int items_cnt = static_cast<int>(cp_values.size());
                 if (items_cnt == 0) { // There are no color changes, but there are some pause print or custom Gcode
-                    append_item(EItemType::Rect, m_tool_colors[i], _u8L("Extruder") + " " + std::to_string(i + 1) + " " + _u8L("default color"));
+                    append_item(EItemType::Rect, m_tool_colors.front(), _u8L("Default color"));
                 }
                 else {
-                    for (int j = items_cnt; j >= 0; --j) {
+                    for (int i = items_cnt; i >= 0; --i) {
                         // create label for color change item
-                        std::string label = _u8L("Extruder") + " " + std::to_string(i + 1);
-                        if (j == 0) {
-                            label += " " + upto_label(cp_values.front().second.first);
-                            append_item(EItemType::Rect, m_tool_colors[i], label);
+                        if (i == 0) {
+                            append_item(EItemType::Rect, m_tool_colors[0], upto_label(cp_values.front().second.first));
                             break;
                         }
-                        else if (j == items_cnt) {
-                            label += " " + above_label(cp_values[j - 1].second.second);
-                            append_item(EItemType::Rect, cp_values[j - 1].first, label);
+                        else if (i == items_cnt) {
+                            append_item(EItemType::Rect, cp_values[i - 1].first, above_label(cp_values[i - 1].second.second));
                             continue;
                         }
-
-                        label += " " + fromto_label(cp_values[j - 1].second.second, cp_values[j].second.first);
-                        append_item(EItemType::Rect, cp_values[j - 1].first, label);
+                        append_item(EItemType::Rect, cp_values[i - 1].first, fromto_label(cp_values[i - 1].second.second, cp_values[i].second.first));
                     }
                 }
             }
+            else { // multi extruder use case
+                // shows only extruders actually used
+                for (unsigned char i : m_extruder_ids) {
+                    std::vector<std::pair<Color, std::pair<double, double>>> cp_values = color_print_ranges(i, custom_gcode_per_print_z);
+                    const int items_cnt = static_cast<int>(cp_values.size());
+                    if (items_cnt == 0) { // There are no color changes, but there are some pause print or custom Gcode
+                        append_item(EItemType::Rect, m_tool_colors[i], _u8L("Extruder") + " " + std::to_string(i + 1) + " " + _u8L("default color"));
+                    }
+                    else {
+                        for (int j = items_cnt; j >= 0; --j) {
+                            // create label for color change item
+                            std::string label = _u8L("Extruder") + " " + std::to_string(i + 1);
+                            if (j == 0) {
+                                label += " " + upto_label(cp_values.front().second.first);
+                                append_item(EItemType::Rect, m_tool_colors[i], label);
+                                break;
+                            }
+                            else if (j == items_cnt) {
+                                label += " " + above_label(cp_values[j - 1].second.second);
+                                append_item(EItemType::Rect, cp_values[j - 1].first, label);
+                                continue;
+                            }
+
+                            label += " " + fromto_label(cp_values[j - 1].second.second, cp_values[j].second.first);
+                            append_item(EItemType::Rect, cp_values[j - 1].first, label);
+                        }
+                    }
+                }
+            }
+#if ENABLE_SCROLLABLE_LEGEND
         }
+        ImGui::EndChild();
+#endif // ENABLE_SCROLLABLE_LEGEND
 
         break;
     }
@@ -4520,25 +4589,34 @@ void GCodeViewer::render_legend() const
 
             ImGui::Spacing();
             append_headers({ _u8L("Event"), _u8L("Remaining time"), _u8L("Duration"), /*_u8L("Filament (m)"), _u8L("Filament (g)")*/_u8L("Used filament") }, offsets);
-            for (const PartialTime& item : partial_times) {
-                switch (item.type)
-                {
-                case PartialTime::EType::Print: {
-                    append_print(item.color1, offsets, item.times, item.used_filament);
-                    break;
+#if ENABLE_SCROLLABLE_LEGEND
+                // add scrollable region
+                if (ImGui::BeginChild("events", { -1.0f, child_height }, false)) {
+#endif // ENABLE_SCROLLABLE_LEGEND
+                    for (const PartialTime& item : partial_times) {
+                    switch (item.type)
+                    {
+                    case PartialTime::EType::Print: {
+                        append_print(item.color1, offsets, item.times, item.used_filament);
+                        break;
+                    }
+                    case PartialTime::EType::Pause: {
+                        imgui.text(_u8L("Pause"));
+                        ImGui::SameLine(offsets[0]);
+                        imgui.text(short_time(get_time_dhms(item.times.second - item.times.first)));
+                        break;
+                    }
+                    case PartialTime::EType::ColorChange: {
+                        append_color_change(item.color1, item.color2, offsets, item.times);
+                        break;
+                    }
+                    }
                 }
-                case PartialTime::EType::Pause: {
-                    imgui.text(_u8L("Pause"));
-                    ImGui::SameLine(offsets[0]);
-                    imgui.text(short_time(get_time_dhms(item.times.second - item.times.first)));
-                    break;
-                }
-                case PartialTime::EType::ColorChange: {
-                    append_color_change(item.color1, item.color2, offsets, item.times);
-                    break;
-                }
-                }
+#if ENABLE_SCROLLABLE_LEGEND
             }
+            ImGui::EndChild();
+#endif // ENABLE_SCROLLABLE_LEGEND
+
         }
     }
 
@@ -4597,7 +4675,12 @@ void GCodeViewer::render_legend() const
             available(EMoveType::Pause_Print) ||
             available(EMoveType::Retract) ||
             available(EMoveType::Tool_change) ||
+#if ENABLE_SEAMS_VISUALIZATION
+            available(EMoveType::Unretract) ||
+            available(EMoveType::Seam);
+#else
             available(EMoveType::Unretract);
+#endif // ENABLE_SEAMS_VISUALIZATION
     };
 
     auto add_option = [this, append_item](EMoveType move_type, EOptionsColors color, const std::string& text) {
@@ -4615,6 +4698,9 @@ void GCodeViewer::render_legend() const
         // items
         add_option(EMoveType::Retract, EOptionsColors::Retractions, _u8L("Retractions"));
         add_option(EMoveType::Unretract, EOptionsColors::Unretractions, _u8L("Deretractions"));
+#if ENABLE_SEAMS_VISUALIZATION
+        add_option(EMoveType::Seam, EOptionsColors::Seams, _u8L("Seams"));
+#endif // ENABLE_SEAMS_VISUALIZATION
         add_option(EMoveType::Tool_change, EOptionsColors::ToolChanges, _u8L("Tool changes"));
         add_option(EMoveType::Color_change, EOptionsColors::ColorChanges, _u8L("Color changes"));
         add_option(EMoveType::Pause_Print, EOptionsColors::PausePrints, _u8L("Print pauses"));
@@ -4674,10 +4760,14 @@ void GCodeViewer::render_legend() const
     }
 
     // total estimated printing time section
+#if ENABLE_SCROLLABLE_LEGEND
+    if (show_estimated_time) {
+#else
     if (time_mode.time > 0.0f && (m_view_type == EViewType::FeatureType ||
         (m_view_type == EViewType::ColorPrint && !time_mode.custom_gcode_times.empty()))) {
 
         ImGui::Spacing();
+#endif // ENABLE_SCROLLABLE_LEGEND
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Separator, { 1.0f, 1.0f, 1.0f, 1.0f });
         ImGui::Separator();
