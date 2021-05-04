@@ -2558,13 +2558,15 @@ static bool contains_path_dir(const std::string& p, const std::string& dir_name)
     boost::filesystem::path path(p + (p[p.size()-1] == '/' ? "" : "/") + dir_name);
     if (boost::filesystem::exists(path) && boost::filesystem::is_directory(path)) {
         //BOOST_LOG_TRIVIAL(debug) << path.string() << " " << std::oct << boost::filesystem::status(path).permissions();
-        return true;//boost::filesystem::status(path).permissions() & boost::filesystem::owner_write;
+        return true; //boost::filesystem::status(path).permissions() & boost::filesystem::owner_write;
     } else
         BOOST_LOG_TRIVIAL(debug) << path.string() << " doesnt exists";
     return false;
 }
 static void create_dir(const boost::filesystem::path& path)
 {
+    if (boost::filesystem::exists(path))
+        return;
     BOOST_LOG_TRIVIAL(debug)<< "creating " << path.string();
     boost::system::error_code ec;
     boost::filesystem::create_directory(path, ec);
