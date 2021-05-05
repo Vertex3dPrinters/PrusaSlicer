@@ -68,6 +68,7 @@
 #include "UnsavedChangesDialog.hpp"
 #include "SavePresetDialog.hpp"
 #include "PrintHostDialogs.hpp"
+#include "DesktopIntegrationDialog.hpp"
 
 #include "BitmapCache.hpp"
 
@@ -1624,8 +1625,8 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
         local_menu->Append(config_id_base + ConfigMenuTakeSnapshot, _L("Take Configuration &Snapshot"), _L("Capture a configuration snapshot"));
         local_menu->Append(config_id_base + ConfigMenuUpdate, _L("Check for updates"), _L("Check for configuration updates"));
 #ifdef __linux__
-        if (ConfigWizard::can_undo_desktop_integration())  
-            local_menu->Append(config_id_base + ConfigMenuUndoDesktopIntegration, _L("Undo Desktop Integration"), _L("Undo Desktop Integration"));    
+        if (DesktopIntegrationDialog::integration_possible())
+            local_menu->Append(config_id_base + ConfigMenuDesktopIntegration, _L("Desktop Integration"), _L("Desktop Integration"));    
 #endif        
         local_menu->AppendSeparator();
     }
@@ -1668,8 +1669,8 @@ void GUI_App::add_config_menu(wxMenuBar *menu)
 			check_updates(true);
 			break;
 #ifdef __linux__
-        case ConfigMenuUndoDesktopIntegration:
-            ConfigWizard::undo_desktop_integration();
+        case ConfigMenuDesktopIntegration:
+            show_desktop_integration_dialog();
             break;
 #endif
         case ConfigMenuTakeSnapshot:
@@ -2062,6 +2063,15 @@ bool GUI_App::run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage
     }
 
     return res;
+}
+
+void GUI_App::show_desktop_integration_dialog()
+{
+#ifdef __linux__
+    //wxCHECK_MSG(mainframe != nullptr, false, "Internal error: Main frame not created / null");
+    DesktopIntegrationDialog dialog(mainframe);
+    dialog.ShowModal();
+#endif //__linux__
 }
 
 #if ENABLE_THUMBNAIL_GENERATOR_DEBUG

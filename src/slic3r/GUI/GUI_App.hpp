@@ -76,7 +76,7 @@ enum ConfigMenuIDs {
     ConfigMenuSnapshots,
     ConfigMenuTakeSnapshot,
     ConfigMenuUpdate,
-    ConfigMenuUndoDesktopIntegration,
+    ConfigMenuDesktopIntegration,
     ConfigMenuPreferences,
     ConfigMenuModeSimple,
     ConfigMenuModeAdvanced,
@@ -269,6 +269,7 @@ public:
 
     void            open_web_page_localized(const std::string &http_address);
     bool            run_wizard(ConfigWizard::RunReason reason, ConfigWizard::StartPage start_page = ConfigWizard::SP_WELCOME);
+    void            show_desktop_integration_dialog();
 
 #if ENABLE_THUMBNAIL_GENERATOR_DEBUG
     // temporary and debug only -> extract thumbnails from selected gcode and save them as png files
